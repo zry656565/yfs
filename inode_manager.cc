@@ -1,6 +1,7 @@
 #include "inode_manager.h"
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 // disk layer -----------------------------------------
 
@@ -132,10 +133,9 @@ inode_manager::alloc_inode(uint32_t type)
   ino = (struct inode*)malloc(sizeof(struct inode));
   ino->type = type;
   ino->size = 0;
-  //TODO:
-  ino->atime = 2;
-  ino->mtime = 3;
-  ino->ctime = 4;
+  ino->atime = (unsigned int)time(0);
+  ino->mtime = (unsigned int)time(0);
+  ino->ctime = (unsigned int)time(0);
   for (uint32_t i = 1; i <= INODE_NUM; i++) {
     if (inode_empty(i)) {
 	  put_inode(i, ino);
@@ -213,7 +213,10 @@ inode_manager::get_inode(uint32_t inum)
   }
 
   ino = (struct inode*)malloc(sizeof(struct inode));
+  ino_disk->atime = time(0);
   *ino = *ino_disk;
+  
+  bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
 
   return ino;
 }
@@ -231,6 +234,8 @@ inode_manager::put_inode(uint32_t inum, struct inode *ino)
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
   ino_disk = (struct inode*)buf + inum%IPB;
   *ino_disk = *ino;
+  ino_disk->mtime = time(0);
+  ino_disk->ctime = time(0);
   bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
 }
 
