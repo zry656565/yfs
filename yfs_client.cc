@@ -288,6 +288,9 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
     return r;
 }
 
+#define MIN(a,b) (((a) < (b))? (a) : (b))
+#define MAX(a,b) (((a) > (b))? (a) : (b))
+
 int
 yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         size_t &bytes_written)
@@ -303,21 +306,18 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
 	std::string buf;
 	std::string transfer = data;
 	ec->get(ino, buf);
-	if (off + size <= buf.size()) {
-		bytes_written = size;
-		buf.replace(off, size, transfer.substr(0,size));
-	} else if (off >= buf.size()){
-		bytes_written = off + size - buf.size();
-		size_t newSize = off + size;
+	bytes_written = 0;
+	if (off > buf.size()){
+		bytes_written += off - buf.size();
 		for (off_t i = buf.size(); i < off; i++){
 			buf.push_back('\0');
 		}
-		buf += data;
-		buf = buf.substr(0, newSize);
-	} else {
-		bytes_written = size;
-		buf.replace(off, buf.size()-off, transfer.substr(0,size));
 	}
+	for (size_t iter = off; iter < MIN(off + size, buf.size()); iter++)
+		buf[iter] = data[iter - off];
+	for (size_t iter = buf.size(); iter < off + size; iter++)
+		buf.push_back(data[iter - off]);
+	bytes_written += size;
 	printf("DEBUG: bytes_written:%d, writebuf:%s\n", bytes_written, buf.c_str());
 	ec->put(ino, buf);
 
