@@ -55,16 +55,25 @@ class block_manager {
 
 // Block containing inode i
 #define IBLOCK(i, nblocks)     ((nblocks)/BPB + (i)/IPB + 3)
+// (nblocks)/BPB -> the number of blocks to store the Bitmap
+// (i)/IPB + 1 -> the number of blocks for inode table
+// 2 -> I guess that is super block + boot block
 
 // Bitmap bits per block
 #define BPB           (BLOCK_SIZE*8)
 
 // Block containing bit for block b
 #define BBLOCK(b) ((b)/BPB + 2)
+// 2 -> I guess that is super block + boot block
+
+#define FILE_BEGIN (BLOCK_NUM/BPB + INODE_NUM/IPB + 3)
+#define INODE_BEGIN (BLOCK_NUM/BPB + 2)
+#define BITMAP_BEGIN 2
 
 #define NDIRECT 32
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
+#define DIRECT_CONTENT (32 * BLOCK_SIZE)
 
 typedef struct inode {
   short type;
@@ -80,6 +89,7 @@ class inode_manager {
   block_manager *bm;
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
+  bool inode_empty(uint32_t inum);
 
  public:
   inode_manager();
