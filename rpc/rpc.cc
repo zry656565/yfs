@@ -663,48 +663,69 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 {
     ScopedLock rwl(&reply_window_m_);
 
-    // You fill this in for Lab 1.
-    std::list<reply_t> *rlist = &(reply_window_[clt_nonce]);
-    std::list<reply_t>::iterator it;
-    rpcs::rpcstate_t ret = NEW;
-
-    // if xid matches and cb_present, DONE! Else INPROGRESS
-    for (it = rlist->begin(); it != rlist->end(); it++) {
-        if ((*it).xid == xid) {
-            if ((*it).cb_present) {
-                *b = (*it).buf;
-                *sz = (*it).sz;
-                return DONE;
-            } else
-                return INPROGRESS;
+    // Your lab3 code goes here
+    rpcs::rpcstate_t rv;
+    bool found_reply = false;
+    std::list<reply_t>::iterator reply;
+    std::map<unsigned int, std::list<reply_t> >::iterator client_window = reply_window_.find(clt_nonce);
+  
+    if (client_window != reply_window_.end()) {
+      for (reply = client_window->second.begin();
+          reply != client_window->second.end(); ++reply) {
+        if (reply->xid == xid) {
+          found_reply = true;
+          break;
         }
+      }
     }
-
-    // if xid is too old, FORGOTTEN
-    if (rlist->size() > 0 && xid < rlist->front().xid) {
-        return FORGOTTEN;
-    }
-
-    // insert new one
-    reply_t reply(xid);
-    reply.cb_present = false;
-    for (it = rlist->begin(); it != rlist->end(); it++) {
-        if ((*it).xid > xid) {
-            rlist->insert(it, reply);
-            break;
+  
+    if (found_reply) {
+      if (reply->cb_present) {
+        *b = reply->buf;
+        *sz = reply->sz;
+        rv = DONE;
+      } else {
+        rv = INPROGRESS;
+      }
+    } else {
+      std::map<unsigned int, unsigned int>::iterator highest_xid_rep =
+          highest_xid_rep_.find(clt_nonce);
+  
+      if (highest_xid_rep != highest_xid_rep_.end()
+          && highest_xid_rep->second >= xid) {
+        rv = FORGOTTEN;
+      } else {
+        if (client_window == reply_window_.end()) {
+          client_window = reply_window_.insert(std::make_pair(clt_nonce,
+              std::list<reply_t>())).first;
         }
+        client_window->second.push_back(reply_t(xid));
+  
+        if (highest_xid_rep != highest_xid_rep_.end()) {
+          if (xid_rep > highest_xid_rep->second) {
+            highest_xid_rep->second = xid_rep;
+          }
+        } else {
+          highest_xid_rep = highest_xid_rep_.insert(
+              std::make_pair(clt_nonce, xid_rep)).first;
+        }
+  
+        for (std::list<reply_t>::iterator iter = client_window->second.begin();
+            iter != client_window->second.end(); ) {
+          if (iter->xid <= highest_xid_rep->second) {
+            std::list<reply_t>::iterator to_remove = iter;
+            ++iter;
+            free(to_remove->buf);
+            client_window->second.erase(to_remove);
+          } else {
+            ++iter;
+          }
+        }
+        rv = NEW;
+      }
     }
-    if (it == rlist->end())
-        rlist->push_back(reply);
+    return rv;
 
-    // delete old ones
-    for (it = rlist->begin(); it != rlist->end(); it++) {
-        if ((*it).xid >= xid_rep)
-            break;
-    }
-    rlist->erase(rlist->begin(), it);
-
-    return ret;
 }
 
 // rpcs::dispatch calls add_reply when it is sending a reply to an RPC,
@@ -717,15 +738,16 @@ rpcs::add_reply(unsigned int clt_nonce, unsigned int xid, char *b, int sz)
 {
     ScopedLock rwl(&reply_window_m_);
 
-    std::list<reply_t> *rlist = &(reply_window_[clt_nonce]);
-    std::list<reply_t>::iterator it;
-    for (it = rlist->begin(); it != rlist->end(); it++) {
-        if ((*it).xid == xid) {
-            (*it).sz = sz;
-            (*it).buf = b;
-            (*it).cb_present = true;
-        }
+    // Your lab3 code goes here
+	std::map<unsigned int, std::list<reply_t> >::iterator window = reply_window_.find(clt_nonce);
+    for (std::list<reply_t>::iterator iter = window->second.begin();
+      iter != window->second.end(); ++iter) {
+    if (iter->xid == xid) {
+      iter->buf = b;
+      iter->sz = sz;
+      iter->cb_present = true;
     }
+  }
 }
 
 void
