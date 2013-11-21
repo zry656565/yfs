@@ -136,7 +136,7 @@ yfs_client::setattr(inum ino, size_t size)
 }
 
 int
-yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out, extent_protocol::types type)
+yfs_client::create_(inum parent, const char *name, mode_t mode, inum &ino_out, extent_protocol::types type)
 {
     int r = OK;
     /*
@@ -149,24 +149,24 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out, ex
 	inum ino_lookup = 0;
 	r = lookup(parent, name, found, ino_lookup);
 	if (r != OK) {
-	  return r;
+      return r;
 	}
 	if (found) {
 	  r = EXIST;
-	  return r;
+      return r;
 	}
 	r = ec->create(type, ino_out);
 	if (r != OK) {
-	  return r;
+      return r;
 	}
 	r = ec->put(ino_out,"");
 	if (r != OK) {
-	  return r;
+      return r;
 	}
 	std::string buf;
 	r = ec->get(parent, buf);
 	if (r != OK) {
-	  return r;
+      return r;
 	}
 	buf += ",";
 	buf += name;
@@ -175,9 +175,22 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out, ex
 	buf += filename(ino_out);
 	r = ec->put(parent, buf);
 	if (r != OK) {
-	  return r;
+      return r;
 	}
 
+    return r;
+}
+
+int
+yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out, extent_protocol::types type)
+{
+    int r;
+
+	lc->acquire(parent);
+	printf("create:lock acquire - inum: %d \n", parent);
+	r = create_(parent, name, mode, ino_out, type);
+	lc->release(parent);
+	printf("create:lock release - inum: %d \n", parent);
     return r;
 }
 
@@ -192,8 +205,6 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
      * you should design the format of directory content.
      */
 	
-	printf("lookup:parent:%d, name:%s \n", parent, name);//DEBUG
-	//std::cout << "name:" << name << std::endl;
 	std::list<dirent> list;
 	r = readdir(parent, list);
 	if (r != OK) {
@@ -206,7 +217,6 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 		found = true;
 		break;
 	  }
-	  std::cout << "(*it).name:" << (*it).name;//DEBUG
 	  printf("\nname:%s\n",name);
 	}
 
@@ -227,10 +237,8 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
 	std::string buf;
 	ec->get(dir, buf);
 	if(buf.size()==0){
-	  return r;
+      return r;
 	}
-	printf("readdir:dir:%d\n", dir);//DEBUG
-	//std::cout << "buf:" << buf << std::endl;
 	unsigned int begin = 0, end = 0;
 	bool isName = true;
 	struct dirent* d;
@@ -238,13 +246,9 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
 	  if(isName){
 	    d = new struct dirent();
 	    d->name = buf.substr(begin+1, end-begin-1);
-		//std::cout << "begin:" << begin << "end:" << end 
-		//<< buf.substr(begin+1, end-begin-1) << std::endl;
 	  } else {
 	    d->inum = n2i(buf.substr(begin+1, end-begin-1));
 		list.push_back(*d);
-		//std::cout << "begin:" << begin << "end:" << end 
-		//<< buf.substr(begin+1, end-begin-1) << std::endl;
 	  }
 	  isName = !isName;
 	  begin = end;
@@ -284,7 +288,7 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 			data = buf.substr(off, size);
 		}
 	}
-	
+
     return r;
 }
 
@@ -292,7 +296,7 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 #define MAX(a,b) (((a) > (b))? (a) : (b))
 
 int
-yfs_client::write(inum ino, size_t size, off_t off, const char *data,
+yfs_client::write_(inum ino, size_t size, off_t off, const char *data,
         size_t &bytes_written)
 {
     int r = OK;
@@ -318,13 +322,26 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
 	for (size_t iter = buf.size(); iter < off + size; iter++)
 		buf.push_back(data[iter - off]);
 	bytes_written += size;
-	printf("DEBUG: bytes_written:%d, writebuf:%s\n", bytes_written, buf.c_str());
 	ec->put(ino, buf);
 
     return r;
 }
 
-int yfs_client::unlink(inum parent,const char *name)
+int
+yfs_client::write(inum ino, size_t size, off_t off, const char *data,
+        size_t &bytes_written)
+{
+	int r;
+
+	lc->acquire(ino);
+	printf("write:lock acquire - inum: %d \n", ino);
+	r = write_(ino, size, off, data, bytes_written);
+	lc->release(ino);
+	printf("write:lock release - inum: %d \n", ino);
+    return r;
+}
+
+int yfs_client::unlink_(inum parent,const char *name)
 {
     int r = OK;
 
@@ -339,7 +356,6 @@ int yfs_client::unlink(inum parent,const char *name)
 	if(buf.size()==0){
 	  return NOENT;
 	}
-	printf("unlink:parent:%d, name:%s\n", parent, name);//DEBUG
 	std::cout << "buf:" << buf << std::endl;
 	unsigned int begin = 0, end = 0;
 	unsigned int removeBegin = 0, removeEnd = 0;
@@ -371,7 +387,10 @@ int yfs_client::unlink(inum parent,const char *name)
       if(!isName){
 	    if (found) {
 			removeEnd = buf.size();
-			ec->remove(n2i(buf.substr(begin+1, buf.size()-begin-1)));
+			inum ino = n2i(buf.substr(begin+1, buf.size()-begin-1));
+			if (isfile(ino)){
+				ec->remove(ino);
+			}
 		}
 	  }
     }
@@ -382,3 +401,14 @@ int yfs_client::unlink(inum parent,const char *name)
     return r;
 }
 
+int yfs_client::unlink(inum parent,const char *name)
+{
+	int r;
+
+	lc->acquire(parent);
+	printf("unlink:lock acquire - inum: %d \n", parent);
+	r = unlink_(parent, name);
+	lc->release(parent);
+	printf("unlink:lock release - inum: %d \n", parent);
+    return r;
+}
