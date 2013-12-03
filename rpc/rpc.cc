@@ -663,6 +663,7 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 {
     ScopedLock rwl(&reply_window_m_);
 
+    // You fill this in for Lab 1.
     std::list<reply_t> *rlist = &(reply_window_[clt_nonce]);
     std::list<reply_t>::iterator it;
     rpcs::rpcstate_t ret = NEW;
